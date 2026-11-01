@@ -86,10 +86,59 @@ class InstallerTests(unittest.TestCase):
         config = self.root / 'config.json'
         manage.write_defaults(config, self.root / 'models')
         saved = json.loads(config.read_text())
+        self.assertEqual(saved['VERSION_UID'], 'PY313')
         self.assertEqual(saved['forge_preset'], 'klein')
         self.assertEqual(saved['sd_model_checkpoint'], 'flux-2-klein-4b-fp8.safetensors')
         self.assertEqual(saved['klein_t2i_step'], 4)
         self.assertEqual(saved['outdir_txt2img_samples'], '../../images')
+
+    def test_interrupted_source_copy_can_be_retried(self):
+        source = self.root / 'source'
+        source.mkdir()
+        (source / 'launch.py').write_text('# complete source')
+        engine = self.root / 'engine'
+
+        def interrupt(*args, **kwargs):
+            engine.mkdir(exist_ok=True)
+            (engine / 'launch.py').write_text('# incomplete')
+            raise OSError('simulated interruption')
+
+        with patch('manage.shutil.copytree', side_effect=interrupt):
+            with self.assertRaises(OSError):
+                manage.install_source(source, engine, 'revision123')
+        manage.install_source(source, engine, 'revision123')
+        self.assertEqual((engine / 'launch.py').read_text(), '# complete source')
+        self.assertEqual((engine / '.atelier-revision').read_text(), 'revision123')
+
+    def test_concurrent_lifecycle_operation_is_rejected(self):
+        lock = self.root / 'operation.lock'
+        with manage.operation_lock(lock):
+            with self.assertRaisesRegex(RuntimeError, 'opération'):
+                with manage.operation_lock(lock):
+                    self.fail('second operation entered')
+        with manage.operation_lock(lock):
+            pass
+
+    def test_setup_configures_defaults_before_engine_creates_its_config(self):
+        engine = self.root / 'app/forge'
+        runtime = self.root / '.runtime'
+        for path in [engine / 'launch.py', runtime / 'git/cmd/git.exe', runtime / 'venv/Scripts/python.exe']:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+        (engine / '.atelier-revision').write_text('test-revision')
+        (engine / 'requirements.txt').write_text('Pillow==13.0.0\n')
+        (self.root / 'versions.json').write_text(json.dumps({
+            'release': 'test', 'python': '3.13.15', 'compatibility': {'Pillow': '10.4.0'},
+            'forge': {'revision': 'test-revision'}, 'models': []}))
+
+        def external_command(arguments, **kwargs):
+            if 'launch.py' in arguments and not (engine / 'config.json').exists():
+                (engine / 'config.json').write_text('{"VERSION_UID":"PY313"}')
+
+        with patch.multiple(manage, ROOT=self.root, RUNTIME=runtime, ENGINE=engine):
+            with patch('manage.run', side_effect=external_command):
+                manage.setup()
+        self.assertEqual(json.loads((engine / 'config.json').read_text())['forge_preset'], 'klein')
 
 
 if __name__ == '__main__':

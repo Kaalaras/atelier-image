@@ -16,6 +16,7 @@
   },
   "torch": "2.14.0+cu130",
   "torchvision": "0.29.0+cu130",
+  "compatibility": {"Pillow": "10.4.0", "pillow-heif": "0.22.0"},
   "models": [
     {
       "path": "Stable-diffusion/flux-2-klein-4b-fp8.safetensors",

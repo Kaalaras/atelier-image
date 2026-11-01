@@ -1,5 +1,6 @@
 """Installation Windows locale. Aucune collecte, aucun changement système."""
 import hashlib
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 import json
 import os
@@ -18,6 +19,49 @@ import webbrowser
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / '.runtime'
 ENGINE = ROOT / 'app' / 'forge'
+
+
+@contextmanager
+def operation_lock(path):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('a+b') as handle:
+        if path.stat().st_size == 0:
+            handle.write(b'0')
+            handle.flush()
+        handle.seek(0)
+        try:
+            if sys.platform == 'win32':
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            raise RuntimeError('Une autre opération est en cours. Attendez sa fin.') from error
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if sys.platform == 'win32':
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def install_source(source, engine, revision):
+    marker = engine / '.atelier-revision'
+    pending = engine / '.atelier-installing-revision'
+    if marker.exists() and marker.read_text() == revision:
+        return
+    owned_partial = pending.exists() and pending.read_text() == revision
+    if (engine / 'launch.py').exists() and not owned_partial:
+        raise RuntimeError('Moteur existant différent. Installez cette version dans un nouveau dossier.')
+    engine.mkdir(parents=True, exist_ok=True)
+    pending.write_text(revision)
+    shutil.copytree(source, engine, dirs_exist_ok=True)
+    marker.write_text(revision)
+    pending.unlink(missing_ok=True)
 
 
 def sha256(path):
@@ -86,14 +130,16 @@ def environment():
         'UV_PYTHON_INSTALL_DIR': str(RUNTIME / 'python'),
         'UV_CACHE_DIR': str(RUNTIME / 'cache'),
         'UV_PYTHON_PREFERENCE': 'only-managed',
+        'VIRTUAL_ENV': str(RUNTIME / 'venv'),
         'GRADIO_ANALYTICS_ENABLED': 'False',
         'HF_HUB_DISABLE_TELEMETRY': '1',
         'DO_NOT_TRACK': '1',
         'PYTHONUTF8': '1',
         'PYTHONUNBUFFERED': '1',
         'GIT_PYTHON_GIT_EXECUTABLE': str(RUNTIME / 'git/cmd/git.exe'),
+        'REQS_FILE': str(RUNTIME / 'requirements-forge.txt'),
     })
-    env['PATH'] = os.pathsep.join([str(RUNTIME / 'uv'), str(RUNTIME / 'git/cmd'), env.get('PATH', '')])
+    env['PATH'] = os.pathsep.join([str(RUNTIME / 'venv/Scripts'), str(RUNTIME / 'uv'), str(RUNTIME / 'git/cmd'), env.get('PATH', '')])
     return env
 
 
@@ -107,6 +153,7 @@ def write_defaults(config, models):
     modules = [str((models / name).resolve()) for name in
                ['text_encoder/qwen_3_4b.safetensors', 'VAE/flux2-vae.safetensors']]
     settings = {
+        'VERSION_UID': 'PY313',
         'forge_preset': 'klein',
         'sd_model_checkpoint': 'flux-2-klein-4b-fp8.safetensors',
         'forge_checkpoint_klein': 'flux-2-klein-4b-fp8.safetensors',
@@ -133,39 +180,39 @@ def setup():
     manifest = json.loads((ROOT / 'versions.json').read_text(encoding='utf-8'))
     downloads = RUNTIME / 'downloads'
     marker = ENGINE / '.atelier-revision'
-    if (ENGINE / 'launch.py').exists() and (not marker.exists() or marker.read_text() != manifest['forge']['revision']):
-        raise RuntimeError('Moteur existant différent. Installez cette version dans un nouveau dossier.')
-    if not marker.exists():
+    if not marker.exists() or marker.read_text() != manifest['forge']['revision']:
         archive = downloads / 'forge.zip'
         download_verified(manifest['forge']['url'], archive, manifest['forge']['sha256'])
         extracted = RUNTIME / 'source'
         extract_zip(archive, extracted)
         source = extracted / ('sd-webui-forge-classic-' + manifest['forge']['revision'])
-        shutil.copytree(source, ENGINE, dirs_exist_ok=True)
-        marker.write_text(manifest['forge']['revision'])
+        install_source(source, ENGINE, manifest['forge']['revision'])
     if not (RUNTIME / 'git/cmd/git.exe').exists():
         archive = downloads / 'git.zip'
         download_verified(manifest['git']['url'], archive, manifest['git']['sha256'])
         extract_zip(archive, RUNTIME / 'git')
     uv = RUNTIME / 'uv/uv.exe'
     python = RUNTIME / 'venv/Scripts/python.exe'
+    requirements = (ENGINE / 'requirements.txt').read_text(encoding='utf-8')
+    for name, version in manifest['compatibility'].items():
+        requirements = '\n'.join(name + '==' + version if line.startswith(name + '==') else line
+                                 for line in requirements.splitlines()) + '\n'
+    (RUNTIME / 'requirements-forge.txt').write_text(requirements, encoding='utf-8')
     if not python.exists():
         run([uv, 'venv', '--python', manifest['python'], '--seed', RUNTIME / 'venv'])
     # Model downloads do not mutate the Python environment and can overlap with it.
     with ThreadPoolExecutor(max_workers=3) as pool:
         futures = [pool.submit(download_verified, model['url'], ENGINE / 'models' / model['path'], model['sha256'])
                    for model in manifest['models']]
-        run([uv, 'pip', 'install', '--python', python,
-             '--index', 'https://download.pytorch.org/whl/cu130',
-             'torch==' + manifest['torch'], 'torchvision==' + manifest['torchvision']])
-        run([uv, 'pip', 'install', '--python', python, '-r', ENGINE / 'requirements.txt',
-             'gradio==4.40.0', 'gradio_rangeslider==0.0.8'])
-        run([python, 'launch.py', '--exit', '--uv'], cwd=ENGINE)
+        run([uv, 'pip', 'sync', '--python', python, ROOT / 'requirements-lock.txt'])
+        # The engine creates a minimal config even with --exit; seed ours first.
+        write_defaults(ENGINE / 'config.json', ENGINE / 'models')
+        run([python, 'launch.py', '--exit', '--uv', '--disable-all-extensions'], cwd=ENGINE)
         run([uv, 'pip', 'check', '--python', python])
         for future in futures:
             future.result()
-    write_defaults(ENGINE / 'config.json', ENGINE / 'models')
     (ROOT / 'images').mkdir(exist_ok=True)
+    (RUNTIME / 'installed.json').write_text(json.dumps({'release': manifest['release']}), encoding='utf-8')
     print('\nInstallation terminée. Double-cliquez sur Lancer.bat.', flush=True)
 
 
@@ -177,15 +224,31 @@ def port_is_open():
 
 def start():
     python = RUNTIME / 'venv/Scripts/python.exe'
-    if not python.exists() or not (ENGINE / 'config.json').exists():
+    if not python.exists() or not (ENGINE / 'config.json').exists() or not (RUNTIME / 'installed.json').exists():
         raise RuntimeError('Lancez Installer.bat avant Lancer.bat.')
+    pidfile = RUNTIME / 'server.pid'
+    if pidfile.exists():
+        check = '''
+import psutil, sys
+try:
+    p = psutil.Process(int(sys.argv[1]))
+    raise SystemExit(0 if sys.argv[2] in p.cmdline() else 1)
+except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+    raise SystemExit(1)
+'''
+        previous = subprocess.run([str(python), '-c', check, pidfile.read_text(), str(ENGINE / 'launch.py')], env=environment())
+        if previous.returncode == 0:
+            if port_is_open():
+                webbrowser.open('http://127.0.0.1:7860')
+                return
+            raise RuntimeError('Votre session démarre encore. Attendez ou utilisez Arreter.bat.')
     if port_is_open():
         raise RuntimeError('Le port 7860 est déjà utilisé. Arrêtez votre ancienne interface puis relancez Lancer.bat.')
     logs = ROOT / 'logs'
     logs.mkdir(exist_ok=True)
     logfile = logs / 'forge.log'
     command = [str(python), str(ENGINE / 'launch.py'), '--api', '--port', '7860',
-               '--cuda-stream', '--cuda-malloc', '--skip-prepare-environment']
+               '--cuda-stream', '--cuda-malloc', '--skip-prepare-environment', '--disable-all-extensions']
     with logfile.open('a', encoding='utf-8') as log:
         process = subprocess.Popen(command, cwd=ENGINE, env=environment(), stdout=log,
                                    stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -229,7 +292,9 @@ except psutil.NoSuchProcess:
 if __name__ == '__main__':
     try:
         actions = {'setup': setup, 'start': start, 'stop': stop}
-        actions[sys.argv[1]]()
+        action = actions[sys.argv[1]]
+        with operation_lock(RUNTIME / 'operation.lock'):
+            action()
     except (KeyError, IndexError):
         raise SystemExit('Utilisation : manage.py setup|start|stop')
     except (Exception, KeyboardInterrupt) as error:

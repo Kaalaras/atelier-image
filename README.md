@@ -14,7 +14,7 @@ Ce paquet vise un PC comparable à une RTX 5070 Ti. AMD, Intel, Mac et les carte
 
 ## Installer en trois étapes
 
-1. Télécharger **Atelier-Image-Windows.zip** depuis la [dernière version](../../releases/latest), ou demander ce fichier à la personne qui vous a envoyé ce guide.
+1. Télécharger **Atelier-Image-Windows.zip** depuis la [dernière version](https://github.com/Kaalaras/atelier-image/releases/latest), ou demander ce fichier à la personne qui vous a envoyé ce guide.
 2. Clic droit sur le ZIP → **Extraire tout**. Choisir un dossier personnel, par exemple `Documents\Atelier Image`. Ne pas lancer depuis le ZIP, `Program Files`, un lecteur réseau ou un dossier synchronisé par OneDrive.
 3. Double-cliquer sur **Installer.bat**. Attendre le message **Installation terminée**. Ensuite, double-cliquer sur **Lancer.bat**.
 
@@ -58,6 +58,8 @@ Pour désinstaller : **Arreter.bat**, sauvegarder le dossier **images**, puis su
 La génération et l’interface restent sur votre PC, adresse locale uniquement. Le paquet n’envoie aucun diagnostic ni journal et désactive les options de télémétrie connues. Les téléchargements contactent GitHub, PyTorch, Python et Hugging Face ; ces services voient les requêtes réseau usuelles. Aucun accès public n’est ouvert.
 
 Les versions testées figurent dans [versions.json](versions.json). Ne pas mettre à jour chaque dépendance séparément : utiliser une nouvelle release testée, de préférence dans un nouveau dossier. Il n’y a pas de mise à jour silencieuse.
+
+Le moteur recommande Pillow 13, mais son interface Gradio déclare Pillow inférieur à 11. Ce paquet fixe donc **Pillow 10.4** et **pillow-heif 0.22** pour conserver un ensemble compatible, puis vérifie cette combinaison par génération réelle. Le calcul GPU utilise bien PyTorch 2.14 / CUDA 13. Les extensions sont désactivées dans ce paquet de démarrage.
 
 ## Pour la personne qui partage
 
