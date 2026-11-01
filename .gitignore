@@ -1,0 +1,8 @@
+.runtime/
+app/
+images/
+logs/
+__pycache__/
+*.pyc
+*.zip
+.env
