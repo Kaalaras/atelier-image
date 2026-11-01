@@ -32,6 +32,8 @@ L’ancienne installation SD1.5/AUTOMATIC1111 avait généré une image 512 × 5
 - Installation séparée depuis le ZIP dans un chemin avec espaces et accent, avec PATH limité à Windows (sans Python/Git système) : réussite. uv, Python géré, moteur et Git portable préparés par le bootstrap.
 - Le test du premier lancement a découvert que le moteur créait une configuration minimale avant les réglages du paquet : l’ordre a été corrigé et protégé par un test de régression. La préparation a ensuite été rejouée sans configuration existante et le modèle et ses deux modules ont été correctement sélectionnés.
 - Un second lancement pendant le démarrage a été refusé ; le PID enregistré est resté inchangé. Les paquets d’extensions essayés en développement ont été retirés par synchronisation de l’environnement exact.
+- L’installation séparée a généré une image 768 × 768 via son API locale, avec le modèle et ses deux modules, puis son bouton d’arrêt a terminé son processus. Le paquet principal a ensuite été remis en service.
+- Revue indépendante : onze tests réexécutés, aucun problème critique ou important restant sur les scripts revus. Les deux défauts de reprise/double lancement détectés lors de la première revue ont été corrigés et retestés.
 - Pour éviter de retélécharger 12,5 Go pendant cet essai, les trois fichiers modèles étaient prépositionnés par liens physiques puis revérifiés ; le cache uv était partagé. Leur téléchargement réel et leurs empreintes ont été vérifiés lors du premier essai. Ce test n’est donc pas une machine virtuelle totalement vierge.
 
 ## Limites

@@ -21,18 +21,18 @@
 - Paquet partagé : absence de runtime, identifiants et chemins personnels.
 
 ## Task 1 — téléchargement vérifié et bootstrap
-- [ ] Écrire et exécuter tests/test_installer.py : cache valide, mauvais hash, reprise HTTP et ZIP hostile.
-- [ ] Créer scripts/manage.py et scripts/bootstrap.ps1 ; manifesto versions.json.
-- [ ] Tests unittest puis parsing des scripts avec Windows PowerShell 5.1.
+- [x] Écrire et exécuter tests/test_installer.py : cache valide, mauvais hash, reprise HTTP et ZIP hostile.
+- [x] Créer scripts/manage.py et scripts/bootstrap.ps1 ; manifeste versions.json.
+- [x] Tests unittest puis parsing des scripts avec Windows PowerShell 5.1.
 
 ## Task 2 — installation et génération
-- [ ] Ajouter Installer.bat, Lancer.bat, Arreter.bat et gestion setup/start/stop.
-- [ ] Télécharger versions figées, préparer venv avec uv, configurer le modèle et les paramètres.
-- [ ] Exécuter l’installation complète via bootstrap ; génération, redémarrage et réinstallation idempotente.
-- [ ] Documenter mesures et limites dans docs/validation.md.
+- [x] Ajouter Installer.bat, Lancer.bat, Arreter.bat et gestion setup/start/stop.
+- [x] Télécharger versions figées, préparer venv avec uv, configurer le modèle et les paramètres.
+- [x] Exécuter l’installation complète via bootstrap ; génération, redémarrage et réinstallation idempotente.
+- [x] Documenter mesures et limites dans docs/validation.md.
 
 ## Task 3 — publication
-- [ ] Guide français trois étapes, prérequis, première image, dépannage, licences.
-- [ ] Revue indépendante et correction des problèmes importants.
+- [x] Guide français trois étapes, prérequis, première image, dépannage, licences.
+- [x] Revue indépendante et correction des problèmes importants.
 - [ ] Tests complets, ZIP source inspecté, création du dépôt privé et release.
 - [ ] Vérifier confidentialité et disponibilité du ZIP ; livrer URL et exemple généré.
